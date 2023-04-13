@@ -350,6 +350,7 @@ func (r *OGCRunner) fetchPayload() error {
 
 	obj, err := svc.GetObject(input)
 	if err != nil {
+		fmt.Println("input error for bucket=", r.Bucket, "payloadFile=", r.PayloadFile)
 		return err
 	}
 	defer obj.Body.Close()
