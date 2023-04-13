@@ -47,7 +47,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// err := p
 
 	r = &runners.OGCRunner{PayloadFile: p.S3key, LocalDir: MODEL_DIR, Bucket: os.Getenv("AWS_BUCKET")}
 
