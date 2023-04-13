@@ -50,27 +50,20 @@ func main() {
 	// err := p
 
 	r = &runners.OGCRunner{PayloadFile: p.S3key, LocalDir: MODEL_DIR, Bucket: os.Getenv("AWS_BUCKET")}
-	if err != nil {
-		fmt.Println("Error running model:", err)
-		return
-	}
 
 	err = r.PrepRun()
 	if err != nil {
-		fmt.Println(err)
-		return
+		log.Fatal(err.Error())
 	}
 
 	modelName, err := r.ModelName()
 	if err != nil {
-		fmt.Println(err)
-		return
+		log.Fatal(err.Error())
 	}
 	logFile := filepath.Join(MODEL_DIR, modelName+".log")
 	logOutput, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 	if err != nil {
-		fmt.Println(err)
-		return
+		log.Fatal(err.Error())
 	}
 	defer logOutput.Close()
 
@@ -81,15 +74,13 @@ func main() {
 	fmt.Println("Running model....")
 	err = r.Run()
 	if err != nil {
-		fmt.Println("Error running model:", err)
-		return
+		log.Fatal(err.Error())
 	}
 
 	fmt.Println("Pushing results......")
 	err = r.CopyOutputs()
 	if err != nil {
-		fmt.Println(err)
-		return
+		log.Fatal(err.Error())
 	}
 
 	fmt.Println("Done")
