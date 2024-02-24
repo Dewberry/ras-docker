@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"bytes"
 
 	plug "github.com/Dewberry/papigoplug/papigoplug"
 	"github.com/aws/aws-sdk-go/aws"
@@ -20,10 +21,10 @@ import (
 )
 
 type OGCRunner struct {
-	Bucket      string `json:"bucket"`
-	PayloadFile string `json:"payload_file"`
-	LocalDir    string `json:"local_dir"`
-	Payload     `json:"payload"`
+	Bucket      string  `json:"bucket"`
+	PayloadFile string  `json:"payload_file"`
+	LocalDir    string  `json:"local_dir"`
+	Payload     Payload `json:"payload"`
 }
 
 type Payload struct {
@@ -54,6 +55,40 @@ func (r *OGCRunner) ModelName() (modelName string, err error) {
 		}
 	}
 	return
+}
+
+
+// pluginResults is used to format the JSON string printed at the end of the program.
+type pluginResults struct {
+	Results []map[string]interface{} `json:"plugin_results"`
+}
+
+// printResults encodes the provided map into a JSON string within key "plugin_results" and prints that.
+// This function must be called at the end of the program.
+func printResults(results []map[string]interface{}) (err error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false) // Do not escape HTML characters
+
+	if err = encoder.Encode(pluginResults{Results: results}); err != nil {
+		return
+	}
+
+	// Use strings.TrimSpace to remove the trailing newline added by Encode.
+	fmt.Println(buf.String())
+	return
+}
+
+func (r *OGCRunner) PrintResults() error {
+    var outputsMap []map[string]interface{}
+    for _, output := range r.Payload.Outputs {
+        outputsMap = append(outputsMap, map[string]interface{}{
+            "href": output.Href,
+            "rel":  output.Rel,
+        })
+    }
+    printResults(outputsMap)
+	return nil
 }
 
 func (r *OGCRunner) GeomID() (geomID string, err error) {

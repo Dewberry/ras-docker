@@ -25,6 +25,7 @@ type Runner interface {
 	PrepRun() error
 	Run() error
 	CopyOutputs() error
+	PrintResults() error
 }
 
 func main() {
@@ -41,7 +42,7 @@ func main() {
 	if err != nil {
 		plug.Log.Fatal(err)
 	}
-	plug.Log.Infof("Params provided: %s", params)
+	plug.Log.Infof("input parameters: %s", params)
 
 	// // Local dev only
 	// err = godotenv.Load(".env")
@@ -91,7 +92,10 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	// plug.PrintResults(results)
+	err = r.PrintResults()
+	if err !=nil{
+		plug.Log.Warning("no results...")
+	}
 }
 
 type Inputs struct {
@@ -111,9 +115,4 @@ func FetchParams(inputString string) (Params, error) {
 	}
 
 	return params, nil
-}
-
-// TODO
-func (params Params) Validate() error {
-	return nil
 }
