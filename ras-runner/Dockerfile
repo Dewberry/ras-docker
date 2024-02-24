@@ -16,8 +16,8 @@ RUN chmod +x ras/v61/*
 ENV GOROOT=/go
 ENV GOPATH=/src/go
 ENV PATH=/go/bin:$PATH
-RUN wget https://golang.org/dl/go1.19.1.linux-amd64.tar.gz -P / && \
-    tar -xvzf /go1.19.1.linux-amd64.tar.gz -C /
+RUN wget https://golang.org/dl/go1.21.3.linux-amd64.tar.gz -P / && \
+    tar -xvzf /go1.21.3.linux-amd64.tar.gz -C /
 
 RUN mkdir -p  /sim/model 
 COPY ./ /app

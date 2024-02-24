@@ -5,6 +5,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	plug "github.com/Dewberry/papigoplug/papigoplug"
 )
 
 func getPercentComplete(s string, cv *map[string]float64) (bool, string) {
@@ -39,7 +41,7 @@ func rasPctLog(startLogging *int, message string, checkValues *map[string]float6
 
 		if msg {
 			pctMsg := fmt.Sprintf("MODEL RUN PROGRESS = %s", text)
-			fmt.Println(pctMsg)
+			plug.Log.Infof(pctMsg)
 
 		}
 	}

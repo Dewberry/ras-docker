@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
+	plug "github.com/Dewberry/papigoplug/papigoplug"
+	// "github.com/joho/godotenv"
 	"github.com/labstack/gommon/log"
 )
 
@@ -23,42 +25,50 @@ type Runner interface {
 	PrepRun() error
 	Run() error
 	CopyOutputs() error
+	PrintResults() error
 }
 
 func main() {
-
 	// var runnerType string
 	var r Runner
 	var err error
 
+	// Set log level
+	plug.InitLog("info")
+	allowedParams := plug.PluginParams{
+		Required: []string{"s3key"},
+	}
+	params, err := plug.ParseInput(os.Args, allowedParams)
+	if err != nil {
+		plug.Log.Fatal(err)
+	}
+	plug.Log.Infof("input parameters: %s", params)
+
 	// // Local dev only
 	// err = godotenv.Load(".env")
 	// if err != nil {
-	// 	log.Fatal("Error loading .env file")
+	// 	plug.Log.Fatal("Error loading .env file")
 	// }
 
-	if len(os.Args) != 2 {
-		log.Fatal("no inputs provided, program requires `inputs: {Params}`")
-	}
-
-	// fmt.Println(os.Args[1])
 	// Fetch inputs
 	p, err := FetchParams(os.Args[1])
 	if err != nil {
-		log.Fatal(err)
+		plug.Log.Fatal(err)
 	}
 
 	r = &runners.OGCRunner{PayloadFile: p.S3key, LocalDir: MODEL_DIR, Bucket: os.Getenv("AWS_BUCKET")}
 
 	err = r.PrepRun()
 	if err != nil {
-		log.Fatal(err.Error())
+		plug.Log.Fatal(err.Error())
 	}
 
 	modelName, err := r.ModelName()
 	if err != nil {
-		log.Fatal(err.Error())
+		plug.Log.Fatal(err.Error())
 	}
+	plug.Log.Debugf("Model name: %s", modelName)
+
 	logFile := filepath.Join(MODEL_DIR, modelName+".log")
 	logOutput, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 	if err != nil {
@@ -70,19 +80,22 @@ func main() {
 	mw := io.MultiWriter(os.Stdout, logOutput)
 	log.SetOutput(mw)
 
-	fmt.Println("Running model....")
+	plug.Log.Info("initiating model simulation")
 	err = r.Run()
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 
-	fmt.Println("Pushing results......")
+	plug.Log.Info("pushing model outputs")
 	err = r.CopyOutputs()
 	if err != nil {
 		log.Fatal(err.Error())
 	}
 
-	fmt.Println("Done")
+	err = r.PrintResults()
+	if err !=nil{
+		plug.Log.Warning("no results...")
+	}
 }
 
 type Inputs struct {
@@ -95,10 +108,6 @@ type Params struct {
 
 func FetchParams(inputString string) (Params, error) {
 	var params Params
-	if inputString == "" {
-		return params, fmt.Errorf("WaterhsedID and additional params required")
-	}
-
 	err := json.Unmarshal([]byte(inputString), &params)
 	if err != nil {
 		fmt.Println("error unmarshaling input params:", err)
@@ -106,9 +115,4 @@ func FetchParams(inputString string) (Params, error) {
 	}
 
 	return params, nil
-}
-
-// TODO
-func (params Params) Validate() error {
-	return nil
 }

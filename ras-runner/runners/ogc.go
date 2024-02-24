@@ -5,24 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"bytes"
 
+	plug "github.com/Dewberry/papigoplug/papigoplug"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/go-errors/errors"
 )
 
 type OGCRunner struct {
-	Bucket      string `json:"bucket"`
-	PayloadFile string `json:"payload_file"`
-	LocalDir    string `json:"local_dir"`
-	Payload     `json:"payload"`
+	Bucket      string  `json:"bucket"`
+	PayloadFile string  `json:"payload_file"`
+	LocalDir    string  `json:"local_dir"`
+	Payload     Payload `json:"payload"`
 }
 
 type Payload struct {
@@ -53,6 +55,40 @@ func (r *OGCRunner) ModelName() (modelName string, err error) {
 		}
 	}
 	return
+}
+
+
+// pluginResults is used to format the JSON string printed at the end of the program.
+type pluginResults struct {
+	Results []map[string]interface{} `json:"plugin_results"`
+}
+
+// printResults encodes the provided map into a JSON string within key "plugin_results" and prints that.
+// This function must be called at the end of the program.
+func printResults(results []map[string]interface{}) (err error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false) // Do not escape HTML characters
+
+	if err = encoder.Encode(pluginResults{Results: results}); err != nil {
+		return
+	}
+
+	// Use strings.TrimSpace to remove the trailing newline added by Encode.
+	fmt.Println(buf.String())
+	return
+}
+
+func (r *OGCRunner) PrintResults() error {
+    var outputsMap []map[string]interface{}
+    for _, output := range r.Payload.Outputs {
+        outputsMap = append(outputsMap, map[string]interface{}{
+            "href": output.Href,
+            "rel":  output.Rel,
+        })
+    }
+    printResults(outputsMap)
+	return nil
 }
 
 func (r *OGCRunner) GeomID() (geomID string, err error) {
@@ -121,8 +157,6 @@ func (r *OGCRunner) PrepRun() error {
 	svc := s3.New(sess)
 
 	for i, link := range r.Payload.Inputs {
-		fmt.Println(i, link)
-
 		input := &s3.GetObjectInput{
 			Bucket: aws.String(r.Bucket),
 			Key:    aws.String(link.Href),
@@ -130,7 +164,7 @@ func (r *OGCRunner) PrepRun() error {
 
 		obj, err := svc.GetObject(input)
 		if err != nil {
-			fmt.Println("S3 Fetch Error | ", link.Href, err)
+			plug.Log.Infof("S3 Fetch Error |  %s %s", link.Href, err)
 			return err
 		}
 		defer obj.Body.Close()
@@ -140,21 +174,21 @@ func (r *OGCRunner) PrepRun() error {
 
 		f, err := os.OpenFile(localFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 		if err != nil {
-			fmt.Println("Open File Error", err)
+			plug.Log.Errorf("Open File Error %s", err)
 			return err
 		}
 		defer f.Close()
 
 		_, err = io.Copy(f, obj.Body)
 		if err != nil {
-			fmt.Println("Write File Error", err)
+			plug.Log.Errorf("Write File Error %s", err)
 			return err
 		}
 
 		localFiles[i] = localFile
 
 		msg := fmt.Sprintf("downloaded s3://%s/%s to %s", r.Bucket, link.Href, localFile)
-		fmt.Println(msg)
+		plug.Log.Infof(msg)
 
 	}
 
@@ -164,41 +198,35 @@ func (r *OGCRunner) PrepRun() error {
 func (r *OGCRunner) Run() error {
 	modelName, err := r.ModelName()
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
 	geomID, err := r.GeomID()
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
 	unsteadyID, err := r.UnsteadyID()
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
 	cmd := exec.Command("/app/run-model.sh", modelName, geomID, unsteadyID)
 	cmd.Dir = r.LocalDir
 	msg := fmt.Sprintf("running model from directory '%s' with args: [ %s ]", cmd.Dir, strings.Join(cmd.Args, ", "))
-	fmt.Println(msg)
+	plug.Log.Debug(msg)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
 	if err := cmd.Start(); err != nil {
-		fmt.Println(err)
 		return err
 	}
 
@@ -222,7 +250,6 @@ func (r *OGCRunner) Run() error {
 	computeLog := filepath.Join(r.LocalDir, modelName+".log")
 	f, err := os.OpenFile(computeLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 	defer f.Close()
@@ -232,20 +259,17 @@ func (r *OGCRunner) Run() error {
 		rasPctLog(&startLogging, message, &checkValues)
 		_, err := f.WriteString(message + "\n")
 		if err != nil {
-			fmt.Println(err)
 			return err
 		}
 	}
 
 	if err := in.Err(); err != nil {
-		fmt.Println(err)
 		return err
 	}
 
 	// extract stderr messages
 	stderrBytes, err := io.ReadAll(stderr)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 	// check if the command failed
@@ -253,7 +277,7 @@ func (r *OGCRunner) Run() error {
 	if err != nil {
 		// exitError := err.(*exec.ExitError)
 		// fmt.Printf("command exited with non-zero code: %d\n", exitError.ExitCode())
-		fmt.Printf("vvvvv below is stderr from failing command\n%s\n^^^^^ above is stderr from failing command\n", stderrBytes)
+		plug.Log.Errorf("vvvvv below is stderr from failing command\n%s\n^^^^^ above is stderr from failing command\n", stderrBytes)
 		return err
 	}
 
@@ -262,7 +286,6 @@ func (r *OGCRunner) Run() error {
 		if strings.Contains(path, ".tmp") {
 			err := os.Rename(path, strings.Replace(path, ".tmp", "", 1))
 			if err != nil {
-				fmt.Println(err)
 				return err
 			}
 		}
@@ -270,7 +293,6 @@ func (r *OGCRunner) Run() error {
 	})
 
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 
@@ -281,7 +303,6 @@ func (r *OGCRunner) CopyOutputs() error {
 
 	sess, err := session.NewSession()
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
 	svc := s3.New(sess)
@@ -293,13 +314,11 @@ func (r *OGCRunner) CopyOutputs() error {
 
 		file, err := os.Open(localFile)
 		if err != nil {
-			fmt.Println(err)
 			return err
 		}
 
 		fileInfo, err := file.Stat()
 		if err != nil {
-			fmt.Println(err)
 			return err
 		}
 		size := fileInfo.Size()
@@ -321,12 +340,11 @@ func (r *OGCRunner) CopyOutputs() error {
 			ContentType:   aws.String(contentType),
 		})
 		if err != nil {
-			fmt.Println(err)
 			return err
 		}
 
 		msg := fmt.Sprintf("uploaded %s to s3://%s/%s", localFile, r.Bucket, link.Href)
-		fmt.Println(msg)
+		plug.Log.Infof(msg)
 
 	}
 	return nil
@@ -350,12 +368,11 @@ func (r *OGCRunner) fetchPayload() error {
 
 	obj, err := svc.GetObject(input)
 	if err != nil {
-		fmt.Println("input error for bucket=", r.Bucket, "payloadFile=", r.PayloadFile)
-		return err
+		return errors.Errorf("input error for bucket %s payloadFile %s", r.Bucket, r.PayloadFile)
 	}
 	defer obj.Body.Close()
 
-	body, err := ioutil.ReadAll(obj.Body)
+	body, err := io.ReadAll(obj.Body)
 	if err != nil {
 		return err
 	}
