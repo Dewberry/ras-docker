@@ -1,4 +1,5 @@
-FROM registry.access.redhat.com/ubi8/ubi:8.5 as builder
+# FROM registry.access.redhat.com/ubi8/ubi:8.5 as builder  # image URL stopped working Spring 2024
+FROM redhat/ubi8:8.5 as builder
 RUN yum -y update && \
     yum -y install wget && \
     yum -y install unzip && \
@@ -26,7 +27,8 @@ WORKDIR /app
 RUN chmod +x run-model.sh
 RUN go build main.go
 
-FROM registry.access.redhat.com/ubi8/ubi:8.5 as prod
+# FROM registry.access.redhat.com/ubi8/ubi:8.5 as prod    # image URL stopped working Spring 2024
+FROM redhat/ubi8:8.5 as prod
 RUN mkdir -p  /sim/model
 RUN mkdir -p app/
 COPY --from=builder /app/main /app
